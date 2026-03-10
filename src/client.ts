@@ -19,7 +19,7 @@ export class ScorimmoClient {
   readonly leads: LeadsResource
 
   constructor(config: ScorimmoClientConfig) {
-    this.baseUrl = config.baseUrl.replace(/\/$/, '')
+    this.baseUrl = (config.baseUrl ?? 'https://pro.scorimmo.com').replace(/\/$/, '')
     this.username = config.username
     this.password = config.password
     this.leads = new LeadsResource(this)

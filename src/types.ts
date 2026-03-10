@@ -183,8 +183,8 @@ export interface LeadsQuery {
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 export interface ScorimmoClientConfig {
-  /** Base URL of the Scorimmo instance, e.g. "https://app.scorimmo.com" */
-  baseUrl: string
+  /** Base URL de l'instance Scorimmo. Par défaut : "https://pro.scorimmo.com" */
+  baseUrl?: string
   username: string
   password: string
 }

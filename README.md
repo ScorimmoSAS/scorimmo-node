@@ -1,17 +1,10 @@
 # scorimmo-node
 
-Official Node.js / TypeScript SDK for the [Scorimmo](https://www.scorimmo.com) real-estate CRM platform.
+SDK officiel Node.js / TypeScript pour la plateforme CRM immobilier [Scorimmo](https://pro.scorimmo.com).
 
-Simplifies integration of Scorimmo leads into your CRM in two ways:
-- **API client** — fetch, create and update leads with automatic JWT token management
-- **Webhook handler** — receive and dispatch Scorimmo events in Express
-
----
-
-## Requirements
-
-- Node.js ≥ 18
-- TypeScript (optional but recommended)
+Facilite l'intégration des leads Scorimmo dans votre CRM en deux modes :
+- **Client API** — récupérez vos leads avec gestion automatique du token JWT
+- **Réception de webhooks** — recevez et traitez les événements Scorimmo en temps réel
 
 ---
 
@@ -19,59 +12,48 @@ Simplifies integration of Scorimmo leads into your CRM in two ways:
 
 ```bash
 npm install scorimmo-node
-# or
-yarn add scorimmo-node
 ```
+
+**Prérequis :** Node.js ≥ 18
 
 ---
 
-## API Client
+## Client API
 
-```ts
+```js
 import { ScorimmoClient } from 'scorimmo-node'
 
 const client = new ScorimmoClient({
-  baseUrl: 'https://app.scorimmo.com',
-  username: 'your-api-username',
-  password: 'your-api-password',
+  username: 'votre-identifiant-api',
+  password: 'votre-mot-de-passe-api',
+  // baseUrl: 'https://pro.scorimmo.com' (par défaut)
 })
 
-// Fetch all leads created in the last 24h (handles pagination automatically)
+// Récupérer tous les leads des dernières 24h (pagination automatique)
 const since = new Date(Date.now() - 24 * 60 * 60 * 1000)
 const leads = await client.leads.since(since)
 
-// Get a single lead
+// Récupérer un lead par son ID
 const lead = await client.leads.get(42)
 
-// Search leads
+// Rechercher des leads
 const result = await client.leads.list({
-  search: { external_lead_id: 'CRM-001' },
+  search: { external_lead_id: 'MON-CRM-001' },
   order: 'desc',
   limit: 20,
-  page: 1,
 })
 
-// Create a lead
-const created = await client.leads.create({
-  store_id: 1,
-  interest: 'TRANSACTION',
-  customer: { first_name: 'Marie', last_name: 'Dupont', phone: '0600000001' },
-  properties: [{ type: 'Appartement', price: 250000 }],
-})
-
-// Update a lead (e.g. store your CRM id)
-await client.leads.update(created.id, { external_lead_id: 'CRM-456' })
+// Leads d'un point de vente spécifique
+const storeLeads = await client.leads.listByStore(1, { limit: 50 })
 ```
-
-The client handles JWT authentication automatically and refreshes the token before expiry.
 
 ---
 
-## Webhook Handler
+## Réception de webhooks
 
-Configure a webhook URL on your Scorimmo Point of Sale, then receive events in your Express app:
+### 1. Exposer une route dans votre application
 
-```ts
+```js
 import express from 'express'
 import { ScorimmoWebhook } from 'scorimmo-node'
 
@@ -79,87 +61,82 @@ const app = express()
 app.use(express.json())
 
 const webhook = new ScorimmoWebhook({
-  headerKey: 'X-Scorimmo-Key',       // header configured in Scorimmo PoS settings
+  headerKey: 'X-Scorimmo-Key',       // clé d'en-tête configurée côté Scorimmo
   headerValue: process.env.SCORIMMO_WEBHOOK_SECRET,
 })
 
 app.post('/webhook/scorimmo', ...webhook.middleware(), async (req, res) => {
   await webhook.dispatch(req.scorimmo, {
-    onNewLead: async (lead) => {
-      // Full lead object — create in your CRM
-      await yourCRM.contacts.create(lead)
-    },
-    onUpdateLead: async ({ id, ...changes }) => {
-      await yourCRM.contacts.update(id, changes)
-    },
-    onNewRdv: async ({ lead_id, start_time, location }) => {
-      await yourCRM.appointments.create({ lead_id, start_time, location })
-    },
-    onClosureLead: async ({ lead_id, status, close_reason }) => {
-      await yourCRM.contacts.archive(lead_id, { status, close_reason })
-    },
+    onNewLead:     async (lead) => { /* nouveau lead → créer dans votre CRM */ },
+    onUpdateLead:  async (e)    => { /* lead modifié → mettre à jour */ },
+    onNewComment:  async (e)    => { /* nouveau commentaire */ },
+    onNewRdv:      async (e)    => { /* rendez-vous planifié */ },
+    onNewReminder: async (e)    => { /* rappel planifié */ },
+    onClosureLead: async (e)    => { /* lead clôturé → archiver */ },
   })
   res.sendStatus(200)
 })
+
+app.listen(3000)
 ```
 
-### Webhook events
+### 2. Transmettre l'URL à Scorimmo
 
-| Event | Trigger | Key fields |
-|-------|---------|------------|
-| `new_lead` | Lead created in Scorimmo | Full lead object |
-| `update_lead` | Lead updated | `id`, changed fields only |
-| `new_comment` | Comment added to a lead | `lead_id`, `comment` |
-| `new_rdv` | Appointment created | `lead_id`, `start_time`, `location`, `detail` |
-| `new_reminder` | Reminder created | `lead_id`, `start_time`, `detail` |
-| `closure_lead` | Lead closed | `lead_id`, `status`, `close_reason` |
+Une fois votre route déployée (ex. `https://votre-crm.com/webhook/scorimmo`), communiquez les informations suivantes à votre **account manager Scorimmo** ou par e-mail à **assistance@scorimmo.com** :
+
+```
+URL du webhook : https://votre-crm.com/webhook/scorimmo
+En-tête d'authentification :
+  Clé   : X-Scorimmo-Key
+  Valeur : votre-secret
+
+Événements à activer :
+  ☑ Nouveau lead        (new_lead)
+  ☑ Mise à jour lead    (update_lead)
+  ☑ Nouveau commentaire (new_comment)
+  ☑ Rendez-vous         (new_rdv)
+  ☑ Rappel              (new_reminder)
+  ☑ Clôture lead        (closure_lead)
+
+Point(s) de vente concerné(s) : [indiquez vos points de vente]
+```
 
 ---
 
-## Error handling
+## Événements webhook
 
-```ts
+| Événement | Déclencheur | Champs principaux |
+|-----------|-------------|-------------------|
+| `new_lead` | Nouveau lead créé | Objet lead complet (client, biens, vendeur...) |
+| `update_lead` | Lead modifié | `id`, champs modifiés uniquement |
+| `new_comment` | Commentaire ajouté | `lead_id`, `comment`, `created_at` |
+| `new_rdv` | Rendez-vous créé | `lead_id`, `start_time`, `location`, `detail` |
+| `new_reminder` | Rappel créé | `lead_id`, `start_time`, `detail` |
+| `closure_lead` | Lead clôturé | `lead_id`, `status`, `close_reason` |
+
+---
+
+## Gestion des erreurs
+
+```js
 import { ScorimmoApiError, ScorimmoAuthError } from 'scorimmo-node'
 
 try {
   const lead = await client.leads.get(999)
 } catch (err) {
   if (err instanceof ScorimmoApiError) {
-    console.error(err.message, err.statusCode) // e.g. "Lead not found", 404
+    console.error(err.statusCode, err.message) // ex: 404, "Lead not found"
   }
   if (err instanceof ScorimmoAuthError) {
-    console.error('Check your API credentials')
+    console.error('Vérifiez vos identifiants API')
   }
 }
 ```
 
-```ts
-import { WebhookAuthError, WebhookValidationError } from 'scorimmo-node'
-// These are thrown by webhook.parse() and caught automatically by webhook.middleware()
-```
-
 ---
 
-## Framework-agnostic usage
+## Support
 
-Don't use Express? Use `parse()` and `dispatch()` directly:
-
-```ts
-// Works with Fastify, Hono, plain Node http, etc.
-const event = webhook.parse(request.headers, request.body)
-await webhook.dispatch(event, { onNewLead: ... })
-```
-
----
-
-## Examples
-
-See the [`examples/`](./examples) directory:
-- [`express-webhook.ts`](./examples/express-webhook.ts) — complete Express webhook receiver
-- [`fetch-leads.ts`](./examples/fetch-leads.ts) — API client usage
-
----
-
-## License
-
-MIT
+- Account manager Scorimmo
+- **assistance@scorimmo.com**
+- [pro.scorimmo.com](https://pro.scorimmo.com)
