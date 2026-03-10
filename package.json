@@ -1,5 +1,5 @@
 {
-  "name": "@scorimmo/sdk",
+  "name": "scorimmo-node",
   "version": "0.1.0",
   "description": "Official Scorimmo SDK for Node.js — API client & webhook handler",
   "main": "dist/index.js",

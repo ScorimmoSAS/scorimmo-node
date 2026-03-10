@@ -1,4 +1,4 @@
-# @scorimmo/sdk
+# scorimmo-node
 
 Official Node.js / TypeScript SDK for the [Scorimmo](https://www.scorimmo.com) real-estate CRM platform.
 
@@ -18,9 +18,9 @@ Simplifies integration of Scorimmo leads into your CRM in two ways:
 ## Installation
 
 ```bash
-npm install @scorimmo/sdk
+npm install scorimmo-node
 # or
-yarn add @scorimmo/sdk
+yarn add scorimmo-node
 ```
 
 ---
@@ -28,7 +28,7 @@ yarn add @scorimmo/sdk
 ## API Client
 
 ```ts
-import { ScorimmoClient } from '@scorimmo/sdk'
+import { ScorimmoClient } from 'scorimmo-node'
 
 const client = new ScorimmoClient({
   baseUrl: 'https://app.scorimmo.com',
@@ -73,7 +73,7 @@ Configure a webhook URL on your Scorimmo Point of Sale, then receive events in y
 
 ```ts
 import express from 'express'
-import { ScorimmoWebhook } from '@scorimmo/sdk'
+import { ScorimmoWebhook } from 'scorimmo-node'
 
 const app = express()
 app.use(express.json())
@@ -119,7 +119,7 @@ app.post('/webhook/scorimmo', ...webhook.middleware(), async (req, res) => {
 ## Error handling
 
 ```ts
-import { ScorimmoApiError, ScorimmoAuthError } from '@scorimmo/sdk'
+import { ScorimmoApiError, ScorimmoAuthError } from 'scorimmo-node'
 
 try {
   const lead = await client.leads.get(999)
@@ -134,7 +134,7 @@ try {
 ```
 
 ```ts
-import { WebhookAuthError, WebhookValidationError } from '@scorimmo/sdk'
+import { WebhookAuthError, WebhookValidationError } from 'scorimmo-node'
 // These are thrown by webhook.parse() and caught automatically by webhook.middleware()
 ```
 
