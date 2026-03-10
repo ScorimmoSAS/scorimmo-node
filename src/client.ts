@@ -3,8 +3,6 @@ import type {
   Lead,
   LeadsListResult,
   LeadsQuery,
-  CreateLeadPayload,
-  UpdateLeadPayload,
 } from './types.js'
 
 interface TokenCache {
@@ -152,25 +150,6 @@ class LeadsResource {
     )
   }
 
-  /**
-   * Create a new lead.
-   */
-  async create(payload: CreateLeadPayload): Promise<Lead> {
-    return this.client.request<Lead>('/api/lead', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    })
-  }
-
-  /**
-   * Update an existing lead.
-   */
-  async update(id: number, payload: UpdateLeadPayload): Promise<Lead> {
-    return this.client.request<Lead>(`/api/lead/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(payload),
-    })
-  }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

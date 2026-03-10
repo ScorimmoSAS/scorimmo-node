@@ -180,29 +180,6 @@ export interface LeadsQuery {
   page?: number
 }
 
-export interface CreateLeadPayload {
-  store_id: number
-  interest: LeadInterest
-  origin?: string
-  contact_type?: LeadContactType
-  seller_present_on_creation?: boolean
-  external_lead_id?: string
-  external_customer_id?: number
-  customer?: Partial<LeadCustomer>
-  seller?: { id: number }
-  properties?: Partial<LeadProperty>[]
-  custom_fields?: LeadCustomField[]
-}
-
-export interface UpdateLeadPayload {
-  status?: string
-  seller?: { id: number }
-  external_lead_id?: string
-  external_customer_id?: number
-  customer?: Partial<LeadCustomer>
-  [key: string]: unknown
-}
-
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 export interface ScorimmoClientConfig {

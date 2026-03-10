@@ -1,10 +1,10 @@
 /**
  * Example: Fetch leads from the Scorimmo API and sync to your CRM
  *
- * Install: npm install @scorimmo/sdk
+ * Install: npm install scorimmo-node
  * Run:     npx ts-node examples/fetch-leads.ts
  */
-import { ScorimmoClient, ScorimmoApiError } from '@scorimmo/sdk'
+import { ScorimmoClient, ScorimmoApiError } from 'scorimmo-node'
 
 const client = new ScorimmoClient({
   baseUrl: process.env.SCORIMMO_URL ?? 'https://app.scorimmo.com',
@@ -13,7 +13,7 @@ const client = new ScorimmoClient({
 })
 
 async function main() {
-  // ── Example 1: fetch leads created in the last 24h ───────────────────────
+  // ── Fetch leads created in the last 24h ───────────────────────────────────
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000)
   const newLeads = await client.leads.since(since)
 
@@ -23,7 +23,7 @@ async function main() {
     console.log(`  → #${lead.id} ${lead.customer?.last_name ?? '?'} — ${lead.interest} — ${lead.status}`)
   }
 
-  // ── Example 2: get a specific lead ───────────────────────────────────────
+  // ── Get a specific lead ───────────────────────────────────────────────────
   try {
     const lead = await client.leads.get(42)
     console.log('\nLead #42:', lead)
@@ -35,7 +35,7 @@ async function main() {
     }
   }
 
-  // ── Example 3: search leads by external CRM id ───────────────────────────
+  // ── Search leads by external CRM id ──────────────────────────────────────
   const result = await client.leads.list({
     search: { external_lead_id: 'CRM-001' },
     limit: 10,
@@ -43,30 +43,9 @@ async function main() {
 
   console.log(`\nLeads matching external id "CRM-001": ${result.total}`)
 
-  // ── Example 4: create a lead ─────────────────────────────────────────────
-  const created = await client.leads.create({
-    store_id: 1,
-    interest: 'TRANSACTION',
-    origin: 'Mon Site',
-    customer: {
-      first_name: 'Marie',
-      last_name: 'Dupont',
-      email: 'marie.dupont@example.com',
-      phone: '0600000001',
-    },
-    properties: [
-      { type: 'Appartement', price: 250000, area: 65 },
-    ],
-  })
-
-  console.log(`\nCreated lead #${created.id}`)
-
-  // ── Example 5: update a lead with your CRM id ────────────────────────────
-  await client.leads.update(created.id, {
-    external_lead_id: 'CRM-456',
-  })
-
-  console.log(`Updated lead #${created.id} with external_lead_id CRM-456`)
+  // ── List leads for a specific store ───────────────────────────────────────
+  const storeLeads = await client.leads.listByStore(1, { limit: 20 })
+  console.log(`\nStore #1 leads: ${storeLeads.total}`)
 }
 
 main().catch(console.error)

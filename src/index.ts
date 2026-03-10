@@ -15,8 +15,6 @@ export type {
   LeadContactType,
   LeadsListResult,
   LeadsQuery,
-  CreateLeadPayload,
-  UpdateLeadPayload,
   // Webhook events
   WebhookEvent,
   WebhookNewLead,
