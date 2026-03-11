@@ -145,11 +145,19 @@ export type WebhookEvent =
 
 // ─── API ──────────────────────────────────────────────────────────────────────
 
+export interface LeadsListInformations {
+  limit: number
+  current_page: number
+  total_items: number
+  total_pages: number
+  current_page_results: number
+  previous_page: string | null
+  next_page: string | null
+}
+
 export interface LeadsListResult {
   results: Lead[]
-  total: number
-  page: number
-  limit: number
+  informations: [{ informations: LeadsListInformations }]
 }
 
 export type LeadSearchKey =
@@ -158,18 +166,22 @@ export type LeadSearchKey =
   | 'customer_lastname'
   | 'email'
   | 'phone'
+  | 'other_phone_number'
   | 'origin'
   | 'interest'
   | 'seller_firstname'
   | 'seller_lastname'
   | 'seller_id'
   | 'created_at'
+  | 'updated_at'
   | 'status'
   | 'closed_date'
-  | 'updated_at'
+  | 'anonymized_at'
   | 'external_lead_id'
   | 'external_customer_id'
   | 'reference'
+  | 'seller_present_on_creation'
+  | 'transfered'
 
 export interface LeadsQuery {
   /** Global search across all fields */

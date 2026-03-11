@@ -46,22 +46,41 @@ export class ScorimmoClient {
     const data = (await res.json()) as {
       token: string
       token_duration: number
-      token_expirate_at: string
+      token_expirate_at: string | number
     }
+
+    const rawExpiry = data.token_expirate_at
+    const expiresAt = /^\d+$/.test(String(rawExpiry))
+      ? new Date(Number(rawExpiry) * 1000)
+      : new Date(rawExpiry)
 
     this.tokenCache = {
       token: data.token,
       // Expire 60 seconds early to avoid edge cases
-      expiresAt: new Date(new Date(data.token_expirate_at).getTime() - 60_000),
+      expiresAt: new Date(expiresAt.getTime() - 60_000),
     }
 
     return this.tokenCache.token
   }
 
   /**
-   * Low-level authenticated request. Handles token injection and error parsing.
+   * Authenticated JSON request.
+   * On a 401 the token cache is cleared and the request is retried once with a fresh token.
    */
   async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+    try {
+      return await this._rawRequest<T>(path, options)
+    } catch (e) {
+      if (e instanceof ScorimmoApiError && e.statusCode === 401) {
+        // Token expired server-side: invalidate cache and retry once with a fresh token
+        this.tokenCache = null
+        return this._rawRequest<T>(path, options)
+      }
+      throw e
+    }
+  }
+
+  private async _rawRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
     const token = await this.getToken()
 
     const res = await fetch(`${this.baseUrl}${path}`, {
@@ -109,35 +128,51 @@ class LeadsResource {
 
   /**
    * Fetch all leads created or updated after a given date.
-   * Automatically handles pagination and returns a flat array.
+   * Automatically handles pagination and returns a flat deduplicated array.
+   *
+   * @param storeId  Restrict to a specific store (/api/stores/{id}/leads); undefined = global
+   * @param maxPages Safety cap on API pages fetched (default 100 → 5 000 leads)
    *
    * @example
    * const leads = await client.leads.since('2024-06-01T00:00:00')
+   * const leads = await client.leads.since(new Date(), 'created_at', 100, 776)
    */
-  async since(date: string | Date, field: 'created_at' | 'updated_at' = 'created_at'): Promise<Lead[]> {
+  async since(
+    date: string | Date,
+    field: 'created_at' | 'updated_at' = 'created_at',
+    maxPages = 100,
+    storeId?: number,
+  ): Promise<Lead[]> {
     const iso = date instanceof Date ? date.toISOString().slice(0, 19).replace('T', ' ') : date
     const allLeads: Lead[] = []
     let page = 1
 
     while (true) {
-      const result = await this.list({
+      const query = {
         search: { [field]: `>${iso}` } as Record<string, string>,
-        order: 'asc',
+        order: 'asc' as const,
         orderby: field,
         limit: 50,
         page,
-      })
-
-      allLeads.push(...result.results)
-
-      if (allLeads.length >= result.total || result.results.length === 0) {
-        break
       }
 
+      const result = storeId !== undefined
+        ? await this.listByStore(storeId, query)
+        : await this.list(query)
+
+      const results: Lead[] = result.results ?? []
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const totalItems: number = (result as any).informations?.[0]?.informations?.total_items ?? 0
+
+      allLeads.push(...results)
       page++
+
+      if (allLeads.length >= totalItems || results.length === 0 || page > maxPages) break
     }
 
-    return allLeads
+    // Deduplicate by id — a lead can appear on two consecutive pages if it is
+    // created or updated while pagination is in progress (boundary shift).
+    return [...new Map(allLeads.map(l => [l.id, l])).values()]
   }
 
   /**
