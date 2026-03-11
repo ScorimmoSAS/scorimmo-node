@@ -1,6 +1,6 @@
 # scorimmo-node
 
-SDK officiel Node.js / TypeScript pour la plateforme CRM immobilier [Scorimmo](https://pro.scorimmo.com).
+SDK officiel Node.js / TypeScript pour la plateforme [Scorimmo](https://pro.scorimmo.com).
 
 Facilite l'intégration des leads Scorimmo dans votre CRM en deux modes :
 - **Client API** — récupérez vos leads avec gestion automatique du token JWT
@@ -36,7 +36,7 @@ npm install scorimmo-node
 
 ## Identifiants API
 
-Les identifiants (`username` / `password`) sont les mêmes que ceux utilisés pour se connecter à [pro.scorimmo.com](https://pro.scorimmo.com).
+Les identifiants (`username` / `password`) sont ceux par Scorimmo.
 
 Pour le webhook, le secret (`SCORIMMO_WEBHOOK_SECRET`) est une valeur que vous choisissez librement — communiquez-la ensuite à Scorimmo lors de la configuration (voir [Configurer le webhook chez Scorimmo](#configurer-le-webhook-chez-scorimmo)).
 
@@ -232,8 +232,8 @@ Retourne une page de leads.
 | `search` | `Record<string, string>` | Filtres par champ (voir ci-dessous) |
 | `orderby` | `string` | Champ de tri : `created_at`, `updated_at`, `status`, etc. |
 | `order` | `'asc' \| 'desc'` | Ordre de tri |
-| `limit` | `number` | Nombre de résultats par page (défaut : 20) |
-| `page` | `number` | Numéro de page (défaut : 1) |
+| `limit` | `number` | Nombre de résultats par page (défaut API : 20) |
+| `page` | `number` | Numéro de page (défaut API : 1) |
 
 **Filtres `search` disponibles :**
 
