@@ -46,18 +46,19 @@ export class ScorimmoClient {
     const data = (await res.json()) as {
       token: string
       token_duration: number
-      token_expirate_at: string | number
+      token_expirate_at: number | string
     }
 
-    const rawExpiry = data.token_expirate_at
-    const expiresAt = /^\d+$/.test(String(rawExpiry))
-      ? new Date(Number(rawExpiry) * 1000)
-      : new Date(rawExpiry)
+    // The API returns token_expirate_at as a Unix timestamp (seconds).
+    // Multiply by 1000 to convert to milliseconds for the Date constructor.
+    const expiresMs = typeof data.token_expirate_at === 'number'
+      ? data.token_expirate_at * 1000
+      : new Date(data.token_expirate_at).getTime()
 
     this.tokenCache = {
       token: data.token,
       // Expire 60 seconds early to avoid edge cases
-      expiresAt: new Date(expiresAt.getTime() - 60_000),
+      expiresAt: new Date(expiresMs - 60_000),
     }
 
     return this.tokenCache.token
