@@ -81,6 +81,7 @@ export class ScorimmoWebhook {
 
   private readonly signatureSecret: string | null
   private readonly signatureHeader: string // lower-case
+  private readonly logger: { warn: (message: string, context?: unknown) => void } | null
 
   constructor(config: ScorimmoWebhookConfig = {}) {
     // Chaîne vide == aucun secret : évite un hash_equals silencieusement faux si l'env var
@@ -88,6 +89,7 @@ export class ScorimmoWebhook {
     const secret = config.signatureSecret
     this.signatureSecret = secret && secret.length > 0 ? secret : null
     this.signatureHeader = (config.signatureHeader ?? ScorimmoWebhook.DEFAULT_SIGNATURE_HEADER).toLowerCase()
+    this.logger = config.logger ?? null
   }
 
   /**
@@ -134,24 +136,38 @@ export class ScorimmoWebhook {
   /**
    * Dispatche un événement parsé vers le handler correspondant. Les événements non
    * reconnus (`webhook.<name>` futur, ou nom inattendu) tombent sur `onUnknown` s'il
-   * est fourni ; sinon ils sont silencieusement ignorés.
+   * est fourni ; sinon ils sont silencieusement ignorés — ou tracés via le `logger`
+   * optionnel passé au constructeur (`logger.warn(msg, { event })`).
    */
   async dispatch(event: WebhookEvent, handlers: WebhookHandlers): Promise<void> {
+    const named = this.pickNamedHandler(event, handlers)
+    if (named !== null) {
+      await named()
+      return
+    }
+    if (handlers.onUnknown) {
+      await handlers.onUnknown(event)
+      return
+    }
+    this.logger?.warn('scorimmo webhook: no handler for event', { event: event.event })
+  }
+
+  private pickNamedHandler(event: WebhookEvent, handlers: WebhookHandlers): (() => void | Promise<void>) | null {
     switch (event.event) {
       case 'new_lead':
-        await handlers.onNewLead?.(event as WebhookNewLead); break
+        return handlers.onNewLead ? () => handlers.onNewLead!(event as WebhookNewLead) : null
       case 'update_lead':
-        await handlers.onUpdateLead?.(event as WebhookUpdateLead); break
+        return handlers.onUpdateLead ? () => handlers.onUpdateLead!(event as WebhookUpdateLead) : null
       case 'new_comment':
-        await handlers.onNewComment?.(event as WebhookNewComment); break
+        return handlers.onNewComment ? () => handlers.onNewComment!(event as WebhookNewComment) : null
       case 'new_rdv':
-        await handlers.onNewRdv?.(event as WebhookNewRdv); break
+        return handlers.onNewRdv ? () => handlers.onNewRdv!(event as WebhookNewRdv) : null
       case 'new_reminder':
-        await handlers.onNewReminder?.(event as WebhookNewReminder); break
+        return handlers.onNewReminder ? () => handlers.onNewReminder!(event as WebhookNewReminder) : null
       case 'closure_lead':
-        await handlers.onClosureLead?.(event as WebhookClosureLead); break
+        return handlers.onClosureLead ? () => handlers.onClosureLead!(event as WebhookClosureLead) : null
       default:
-        await handlers.onUnknown?.(event)
+        return null
     }
   }
 

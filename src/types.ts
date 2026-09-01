@@ -535,4 +535,12 @@ export interface ScorimmoWebhookConfig {
   signatureSecret?: string
   /** Nom du header portant la signature. Défaut : `X-Signature-256`. */
   signatureHeader?: string
+  /**
+   * Logger optionnel appelé quand `dispatch()` ne trouve aucun handler nommé ni `onUnknown`.
+   * Interface minimale compatible avec `console`, `pino`, `winston`, etc.
+   * Absent → silent-drop (comportement historique).
+   */
+  logger?: {
+    warn: (message: string, context?: unknown) => void
+  }
 }

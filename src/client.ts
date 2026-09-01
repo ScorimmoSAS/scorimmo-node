@@ -142,6 +142,9 @@ const DATE_FIELDS = ['created_at', 'updated_at'] as const
  *
  * La **création** de leads n'est volontairement pas exposée — utilisez l'UI Scorimmo,
  * les formulaires publics (`client.form`) ou les imports.
+ *
+ * @scope ROLE_API_LEAD_READ (lead:read) pour `get()` / `list()` / `since()`
+ * @scope ROLE_API_LEAD_WRITE (lead:write) pour `update()`
  */
 export class LeadsResource extends AbstractResource<Lead, LeadsListQuery> {
   protected basePath(): string { return '/api/v2/leads' }
@@ -169,6 +172,8 @@ export class LeadsResource extends AbstractResource<Lead, LeadsListQuery> {
    * Mise à jour partielle d'un lead — seuls les champs transmis sont modifiés.
    * Champs acceptés : `seller_id`, `origin`, `external_lead_id`, `external_customer_id`,
    * `additional_fields` (remplacement complet du bloc).
+   *
+   * @scope ROLE_API_LEAD_WRITE (lead:write)
    */
   async update(id: number, data: LeadUpdatePayload): Promise<Lead> {
     if (!data || Object.keys(data).length === 0) {
@@ -247,6 +252,10 @@ export class LeadsResource extends AbstractResource<Lead, LeadsListQuery> {
 
 // ─── Appointments / Comments / Reminders / Requests (lecture seule) ──────────
 
+/**
+ * Ressource Appointments — lecture seule des rendez-vous.
+ * @scope ROLE_API_LEAD_READ (lead:read)
+ */
 export class AppointmentsResource extends AbstractResource<LeadAppointment, AppointmentsListQuery> {
   protected basePath(): string { return '/api/v2/appointments' }
   protected override sortFields(): readonly string[] {
@@ -254,11 +263,19 @@ export class AppointmentsResource extends AbstractResource<LeadAppointment, Appo
   }
 }
 
+/**
+ * Ressource Comments — lecture seule des commentaires.
+ * @scope ROLE_API_LEAD_READ (lead:read)
+ */
 export class CommentsResource extends AbstractResource<LeadComment, CommentsListQuery> {
   protected basePath(): string { return '/api/v2/comments' }
   protected override sortFields(): readonly string[] { return ['id', 'created_at'] }
 }
 
+/**
+ * Ressource Reminders — lecture seule des rappels.
+ * @scope ROLE_API_LEAD_READ (lead:read)
+ */
 export class RemindersResource extends AbstractResource<LeadReminder, RemindersListQuery> {
   protected basePath(): string { return '/api/v2/reminders' }
   protected override sortFields(): readonly string[] {
@@ -266,6 +283,10 @@ export class RemindersResource extends AbstractResource<LeadReminder, RemindersL
   }
 }
 
+/**
+ * Ressource Requests — lecture seule des demandes/biens rattachés aux leads.
+ * @scope ROLE_API_LEAD_READ (lead:read)
+ */
 export class RequestsResource extends AbstractResource<LeadRequest, RequestsListQuery> {
   protected basePath(): string { return '/api/v2/requests' }
   protected override sortFields(): readonly string[] { return ['id', 'created_at', 'updated_at'] }
@@ -275,7 +296,8 @@ export class RequestsResource extends AbstractResource<LeadRequest, RequestsList
 
 /**
  * Ressource Stores — points de vente accessibles au compte.
- * Endpoints : `GET /api/v2/stores`, `GET /api/v2/stores/{id}`. Scope : `ref:read`.
+ * Endpoints : `GET /api/v2/stores`, `GET /api/v2/stores/{id}`.
+ * @scope ROLE_API_REF_READ (ref:read)
  */
 export class StoresResource extends AbstractResource<Store, BaseListQuery> {
   protected basePath(): string { return '/api/v2/stores' }
@@ -284,7 +306,8 @@ export class StoresResource extends AbstractResource<Store, BaseListQuery> {
 const USER_ROLES: readonly UserRole[] = ['admin', 'manager', 'agent', 'virtual']
 
 /**
- * Ressource Users — conseillers et managers. Scope : `ref:read`.
+ * Ressource Users — conseillers et managers.
+ * @scope ROLE_API_REF_READ (ref:read)
  */
 export class UsersResource extends AbstractResource<User, UsersListQuery> {
   protected basePath(): string { return '/api/v2/users' }
@@ -299,16 +322,18 @@ export class UsersResource extends AbstractResource<User, UsersListQuery> {
 }
 
 /**
- * Ressource Customers — contacts/prospects rattachés aux leads. Scope : `ref:read`.
+ * Ressource Customers — contacts/prospects rattachés aux leads.
  * Le filtre `phone` s'applique en OR sur `phone` et `other_phone` côté API.
+ * @scope ROLE_API_REF_READ (ref:read)
  */
 export class CustomersResource extends AbstractResource<Customer, CustomersListQuery> {
   protected basePath(): string { return '/api/v2/customers' }
 }
 
 /**
- * Ressource Status — référentiel des statuts et sous-statuts. Scope : `ref:read`.
+ * Ressource Status — référentiel des statuts et sous-statuts.
  * Les filtres `interest` et `store_id` acceptent une liste CSV.
+ * @scope ROLE_API_REF_READ (ref:read)
  */
 export class StatusResource extends AbstractResource<StatusEntry, StatusListQuery> {
   protected basePath(): string { return '/api/v2/status' }
@@ -317,7 +342,8 @@ export class StatusResource extends AbstractResource<StatusEntry, StatusListQuer
 const TRACKING_CHANNELS: readonly OriginTrackingChannel[] = ['phone', 'email']
 
 /**
- * Ressource Origins — origines configurées sur le compte. Scope : `ref:read`.
+ * Ressource Origins — origines configurées sur le compte.
+ * @scope ROLE_API_REF_READ (ref:read)
  */
 export class OriginsResource extends AbstractResource<Origin, OriginsListQuery> {
   protected basePath(): string { return '/api/v2/origins' }
@@ -333,14 +359,16 @@ export class OriginsResource extends AbstractResource<Origin, OriginsListQuery> 
 }
 
 /**
- * Ressource AdditionalFields — champs additionnels par agence/intérêt. Scope : `ref:read`.
+ * Ressource AdditionalFields — champs additionnels par agence/intérêt.
+ * @scope ROLE_API_REF_READ (ref:read)
  */
 export class AdditionalFieldsResource extends AbstractResource<FieldSet, FieldsListQuery> {
   protected basePath(): string { return '/api/v2/additional_fields' }
 }
 
 /**
- * Ressource RequestFields — champs de demande par agence/intérêt. Scope : `ref:read`.
+ * Ressource RequestFields — champs de demande par agence/intérêt.
+ * @scope ROLE_API_REF_READ (ref:read)
  */
 export class RequestFieldsResource extends AbstractResource<FieldSet, FieldsListQuery> {
   protected basePath(): string { return '/api/v2/requests/fields' }
@@ -350,7 +378,8 @@ export class RequestFieldsResource extends AbstractResource<FieldSet, FieldsList
 
 /**
  * Ressource Form — soumission de formulaires publics (POST /api/v2/form).
- * Crée un lead et envoie l'email au(x) destinataire(s). Scope : `ROLE_API_FORM_WRITE`.
+ * Crée un lead et envoie l'email au(x) destinataire(s).
+ * @scope ROLE_API_FORM_WRITE (pas de scope JWT court)
  */
 export class FormResource {
   constructor(private readonly client: ScorimmoClient) {}
@@ -370,6 +399,7 @@ export class FormResource {
 /**
  * Ressource WebCallbacks — déclenche un appel sortant via l'API webcallback.
  * ATTENTION : n'utilise pas l'authentification Bearer — passe une clé WCB dans le body.
+ * @scope aucun (clé WCB en body)
  */
 export class WebCallbacksResource {
   constructor(private readonly client: ScorimmoClient) {}

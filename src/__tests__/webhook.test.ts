@@ -163,6 +163,26 @@ describe('ScorimmoWebhook.dispatch()', () => {
     await expect(w.dispatch(event, {})).resolves.toBeUndefined()
   })
 
+  it('calls logger.warn when no handler nor onUnknown is registered', async () => {
+    const warn = jest.fn<(msg: string, ctx?: unknown) => void>()
+    const withLogger = new ScorimmoWebhook({ signatureSecret: SECRET, logger: { warn } })
+    const body = JSON.stringify({ event: 'future_event', lead_id: 1 })
+    const event = withLogger.parse({ 'x-signature-256': sign(body) }, body)
+    await withLogger.dispatch(event, {})
+    expect(warn).toHaveBeenCalledWith('scorimmo webhook: no handler for event', { event: 'future_event' })
+  })
+
+  it('does not call logger.warn when onUnknown catches the event', async () => {
+    const warn = jest.fn<(msg: string, ctx?: unknown) => void>()
+    const onUnknown = jest.fn<() => void>()
+    const withLogger = new ScorimmoWebhook({ signatureSecret: SECRET, logger: { warn } })
+    const body = JSON.stringify({ event: 'future_event', lead_id: 1 })
+    const event = withLogger.parse({ 'x-signature-256': sign(body) }, body)
+    await withLogger.dispatch(event, { onUnknown })
+    expect(onUnknown).toHaveBeenCalledTimes(1)
+    expect(warn).not.toHaveBeenCalled()
+  })
+
   it('handle() parses and dispatches in one call', async () => {
     const handler = jest.fn<() => void>()
     await w.handle({ 'x-signature-256': sign(newLeadRaw) }, newLeadRaw, { onNewLead: handler })
