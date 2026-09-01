@@ -1,27 +1,91 @@
-export { ScorimmoClient, ScorimmoApiError, ScorimmoAuthError } from './client.js'
-export { ScorimmoWebhook, WebhookAuthError, WebhookValidationError } from './webhook.js'
+export {
+  ScorimmoClient,
+  ScorimmoApiError,
+  ScorimmoAuthError,
+  LeadsResource,
+  AppointmentsResource,
+  CommentsResource,
+  RemindersResource,
+  RequestsResource,
+  StoresResource,
+  UsersResource,
+  CustomersResource,
+  StatusResource,
+  OriginsResource,
+  AdditionalFieldsResource,
+  RequestFieldsResource,
+  FormResource,
+  WebCallbacksResource,
+} from './client.js'
+
+export {
+  ScorimmoWebhook,
+  WebhookAuthError,
+  WebhookValidationError,
+} from './webhook.js'
+
 export type {
   // Config
   ScorimmoClientConfig,
   ScorimmoWebhookConfig,
+  // Pagination
+  BaseListQuery,
+  PaginationMeta,
+  PaginatedResponse,
+  // Auth
+  TokenResponse,
+  TokenValidateResponse,
   // Lead
   Lead,
   LeadCustomer,
   LeadSeller,
-  LeadProperty,
-  LeadCustomField,
+  LeadRequest,
+  LeadAppointment,
   LeadComment,
+  LeadReminder,
   LeadInterest,
   LeadContactType,
-  LeadsListResult,
-  LeadsQuery,
+  LeadPurpose,
+  LeadInclude,
+  LeadsListQuery,
+  LeadUpdatePayload,
+  // Resources
+  AppointmentsListQuery,
+  AppointmentDetail,
+  CommentsListQuery,
+  RemindersListQuery,
+  ReminderDetail,
+  RequestsListQuery,
+  Store,
+  User,
+  UserRole,
+  UsersListQuery,
+  Customer,
+  CustomersListQuery,
+  StatusEntry,
+  StatusListQuery,
+  Origin,
+  OriginTracking,
+  OriginTrackingChannel,
+  OriginsListQuery,
+  FieldDefinition,
+  FieldSet,
+  FieldsListQuery,
+  // Form / WebCallbacks
+  FormCustomer,
+  FormSubmitPayload,
+  FormSubmitResponse,
+  WebCallbackLaunchResponse,
   // Webhook events
   WebhookEvent,
+  SemanticWebhookEvent,
   WebhookNewLead,
   WebhookUpdateLead,
   WebhookNewComment,
   WebhookNewRdv,
   WebhookNewReminder,
   WebhookClosureLead,
+  ClosureStatus,
 } from './types.js'
+
 export type { WebhookHandlers } from './webhook.js'
