@@ -16,7 +16,13 @@ export {
   RequestFieldsResource,
   FormResource,
   WebCallbacksResource,
+  CampaignsResource,
+  CampaignFieldsResource,
+  CampaignContactsResource,
+  WebhooksResource,
 } from './client.js'
+
+export { ScorimmoOAuth } from './oauth.js'
 
 export {
   ScorimmoWebhook,
@@ -28,6 +34,7 @@ export type {
   // Config
   ScorimmoClientConfig,
   ScorimmoWebhookConfig,
+  ScorimmoOAuthConfig,
   // Pagination
   BaseListQuery,
   PaginationMeta,
@@ -35,6 +42,10 @@ export type {
   // Auth
   TokenResponse,
   TokenValidateResponse,
+  ApiToken,
+  ApiTokensResponse,
+  OAuthClientRegistration,
+  OAuthTokenResponse,
   // Lead
   Lead,
   LeadCustomer,
@@ -76,6 +87,29 @@ export type {
   FormSubmitPayload,
   FormSubmitResponse,
   WebCallbackLaunchResponse,
+  // Campaigns
+  Campaign,
+  CampaignStatus,
+  CampaignsListQuery,
+  CampaignField,
+  CampaignFieldSet,
+  CampaignFieldsListQuery,
+  CampaignContact,
+  CampaignContactStatus,
+  CampaignContactSubStatus,
+  CampaignContactsListQuery,
+  CampaignContactInput,
+  CampaignContactInjectResult,
+  CampaignContactsInjectResponse,
+  // Webhook subscriptions
+  WebhookEventCode,
+  WebhookHeader,
+  WebhookSubscription,
+  WebhookSubscriptionCreatePayload,
+  WebhookSubscriptionUpdatePayload,
+  WebhooksListQuery,
+  WebhookDeliveryError,
+  WebhookErrorsListQuery,
   // Webhook events
   WebhookEvent,
   SemanticWebhookEvent,
@@ -85,6 +119,9 @@ export type {
   WebhookNewRdv,
   WebhookNewReminder,
   WebhookClosureLead,
+  WebhookCampaignContactUpdated,
+  WebhookCampaignContactClosed,
+  WebhookCampaignClosed,
   ClosureStatus,
 } from './types.js'
 

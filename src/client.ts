@@ -1,6 +1,18 @@
 import type {
+  ApiTokensResponse,
   AppointmentsListQuery,
   BaseListQuery,
+  Campaign,
+  CampaignContact,
+  CampaignContactInput,
+  CampaignContactStatus,
+  CampaignContactSubStatus,
+  CampaignContactsInjectResponse,
+  CampaignContactsListQuery,
+  CampaignFieldSet,
+  CampaignFieldsListQuery,
+  CampaignStatus,
+  CampaignsListQuery,
   CommentsListQuery,
   Customer,
   CustomersListQuery,
@@ -32,6 +44,12 @@ import type {
   UserRole,
   UsersListQuery,
   WebCallbackLaunchResponse,
+  WebhookDeliveryError,
+  WebhookErrorsListQuery,
+  WebhookSubscription,
+  WebhookSubscriptionCreatePayload,
+  WebhookSubscriptionUpdatePayload,
+  WebhooksListQuery,
 } from './types.js'
 
 // ─── Errors ───────────────────────────────────────────────────────────────────
@@ -40,15 +58,24 @@ import type {
  * Levée lorsque l'API renvoie une réponse HTTP non-2xx, ou lorsqu'une erreur réseau
  * empêche d'atteindre l'API. `statusCode` vaut 0 pour une erreur réseau.
  * `apiCode` reflète l'identifiant d'erreur applicatif éventuellement présent dans le body.
+ * `body` contient le corps JSON décodé de la réponse d'erreur (vide pour une erreur réseau).
+ * `retryAfter` porte le délai en secondes du header `Retry-After` (429).
  */
 export class ScorimmoApiError extends Error {
   constructor(
     message: string,
     public readonly statusCode: number,
     public readonly apiCode?: string | number,
+    public readonly body: Record<string, unknown> = {},
+    public readonly retryAfter?: number,
   ) {
     super(message)
     this.name = 'ScorimmoApiError'
+  }
+
+  /** Retourne le détail des champs refusés d'une erreur de validation (422). */
+  getFieldErrors(): Array<{ field: string; message: string }> {
+    return (this.body['errors'] as Array<{ field: string; message: string }> | undefined) ?? []
   }
 }
 
@@ -360,6 +387,7 @@ export class OriginsResource extends AbstractResource<Origin, OriginsListQuery> 
 
 /**
  * Ressource AdditionalFields — champs additionnels par agence/intérêt.
+ * Le `type` retourné vaut `string`, `number`, `integer`, `boolean` ou `choice`.
  * @scope ROLE_API_REF_READ (ref:read)
  */
 export class AdditionalFieldsResource extends AbstractResource<FieldSet, FieldsListQuery> {
@@ -368,6 +396,7 @@ export class AdditionalFieldsResource extends AbstractResource<FieldSet, FieldsL
 
 /**
  * Ressource RequestFields — champs de demande par agence/intérêt.
+ * Le `type` retourné vaut `string`, `number`, `integer`, `boolean` ou `choice`.
  * @scope ROLE_API_REF_READ (ref:read)
  */
 export class RequestFieldsResource extends AbstractResource<FieldSet, FieldsListQuery> {
@@ -390,7 +419,15 @@ export class FormResource {
         throw new Error(`submit() requires "${required}" in payload`)
       }
     }
-    return this.client.request<FormSubmitResponse>('POST', '/api/v2/form', data)
+
+    let payload = data
+    // `customer.civility` est devenu `title` : l'API ignorerait l'ancienne clé sans erreur.
+    if (data.customer?.civility !== undefined) {
+      const { civility, ...customer } = data.customer
+      payload = { ...data, customer: { title: civility, ...customer } }
+    }
+
+    return this.client.request<FormSubmitResponse>('POST', '/api/v2/form', payload)
   }
 }
 
@@ -404,6 +441,12 @@ export class FormResource {
 export class WebCallbacksResource {
   constructor(private readonly client: ScorimmoClient) {}
 
+  /**
+   * @param key          Clé personnelle WebCallback
+   * @param numberToCall Fixe ou mobile de France métropolitaine (ex. `0612345678` ou `+33612345678`) ;
+   *                     numéros surtaxés, courts, étrangers et d'outre-mer refusés (400).
+   *                     Sur un 429, réessayer après `err.retryAfter` secondes.
+   */
   async launch(key: string, numberToCall: string): Promise<WebCallbackLaunchResponse> {
     if (!key || !numberToCall) {
       throw new Error('launch() requires both "key" and "numberToCall" to be non-empty')
@@ -413,6 +456,177 @@ export class WebCallbacksResource {
       '/api/v2/webcallbacks',
       { key, number_to_call: numberToCall },
     )
+  }
+}
+
+// ─── Campaigns ────────────────────────────────────────────────────────────────
+
+const CAMPAIGN_STATUSES: readonly CampaignStatus[] = ['upcoming', 'open', 'closed']
+
+/**
+ * Ressource Campaigns — campagnes d'appels des points de vente accessibles.
+ * Sert à découvrir les identifiants de campagne et à savoir lesquelles sont ouvertes
+ * (`status: 'open'`) avant d'y injecter des contacts via `campaignContacts`.
+ * Endpoints : `GET /api/v2/campaigns`, `GET /api/v2/campaigns/{id}`.
+ * @scope ROLE_API_CAMPAIGN_READ (campaign:read)
+ */
+export class CampaignsResource extends AbstractResource<Campaign, CampaignsListQuery> {
+  protected basePath(): string { return '/api/v2/campaigns' }
+  protected override sortFields(): readonly string[] { return ['id', 'name', 'start', 'end'] }
+
+  override async list(query: CampaignsListQuery = {}): Promise<PaginatedResponse<Campaign>> {
+    if (query.status && !CAMPAIGN_STATUSES.includes(query.status)) {
+      throw new Error(`"status" must be one of: ${CAMPAIGN_STATUSES.join(', ')}. Got: "${query.status}"`)
+    }
+    return super.list(query)
+  }
+}
+
+/**
+ * Ressource CampaignFields — questions configurées sur les campagnes.
+ * Utiliser les `label` retournés comme clés de `answers` dans `campaignContacts.inject()`.
+ * Endpoint : `GET /api/v2/campaigns/fields`.
+ * @scope ROLE_API_CAMPAIGN_READ (campaign:read)
+ */
+export class CampaignFieldsResource extends AbstractResource<CampaignFieldSet, CampaignFieldsListQuery> {
+  protected basePath(): string { return '/api/v2/campaigns/fields' }
+}
+
+const CAMPAIGN_CONTACT_STATUSES: readonly CampaignContactStatus[] = ['new', 'recontact', 'no_answer', 'closed', 'validated']
+const CAMPAIGN_CONTACT_SUB_STATUSES: readonly CampaignContactSubStatus[] = ['no_follow', 'refuse_answer', 'delete_contact', 'no_answer']
+
+/**
+ * Ressource CampaignContacts — contacts des campagnes d'appels.
+ *
+ * Endpoints couverts :
+ *  - GET  /api/v2/campaigns/contacts
+ *  - GET  /api/v2/campaigns/contacts/{id}
+ *  - POST /api/v2/campaigns/contacts
+ *
+ * @scope ROLE_API_CAMPAIGN_READ (campaign:read) pour `get()` / `list()`
+ * @scope ROLE_API_CAMPAIGN_WRITE (campaign:write) pour `inject()`
+ */
+export class CampaignContactsResource extends AbstractResource<CampaignContact, CampaignContactsListQuery> {
+  /** Nombre maximum de contacts acceptés par `inject()`. */
+  static readonly MAX_CONTACTS = 100
+
+  protected basePath(): string { return '/api/v2/campaigns/contacts' }
+  protected override sortFields(): readonly string[] {
+    return ['id', 'created_at', 'updated_at', 'last_contact_at']
+  }
+
+  /** Liste les contacts d'une campagne. `campaign_id` est obligatoire. */
+  override async list(query: CampaignContactsListQuery): Promise<PaginatedResponse<CampaignContact>> {
+    if (query?.campaign_id === undefined || query.campaign_id === null) {
+      throw new Error('list() requires "campaign_id" in query')
+    }
+    if (query.status && !CAMPAIGN_CONTACT_STATUSES.includes(query.status)) {
+      throw new Error(`"status" must be one of: ${CAMPAIGN_CONTACT_STATUSES.join(', ')}. Got: "${query.status}"`)
+    }
+    if (query.sub_status && !CAMPAIGN_CONTACT_SUB_STATUSES.includes(query.sub_status)) {
+      throw new Error(`"sub_status" must be one of: ${CAMPAIGN_CONTACT_SUB_STATUSES.join(', ')}. Got: "${query.sub_status}"`)
+    }
+    return super.list(query)
+  }
+
+  /**
+   * Injecte jusqu'à 100 contacts dans une campagne.
+   *
+   * Chaque contact est validé séparément : un contact refusé n'empêche pas l'enregistrement
+   * des autres. Le compte rendu est retourné même si tous les contacts sont refusés (l'API
+   * répond alors 422 avec le même corps) ; consulter `meta.rejected` et `data[].errors`.
+   *
+   * Lève `ScorimmoApiError` en 404 (campagne introuvable), 409 (injection déjà en cours,
+   * réessayer) ou 422 (campagne clôturée, corps invalide).
+   *
+   * @scope ROLE_API_CAMPAIGN_WRITE (campaign:write)
+   */
+  async inject(campaignId: number, contacts: CampaignContactInput[]): Promise<CampaignContactsInjectResponse> {
+    if (contacts.length === 0 || contacts.length > CampaignContactsResource.MAX_CONTACTS) {
+      throw new Error(
+        `inject() requires between 1 and ${CampaignContactsResource.MAX_CONTACTS} contacts, got: ${contacts.length}`,
+      )
+    }
+
+    try {
+      return await this.client.request<CampaignContactsInjectResponse>('POST', this.basePath(), {
+        campaign_id: campaignId,
+        contacts,
+      })
+    } catch (e) {
+      if (e instanceof ScorimmoApiError && e.statusCode === 422 && e.body['data'] && e.body['meta']) {
+        return e.body as unknown as CampaignContactsInjectResponse
+      }
+      throw e
+    }
+  }
+}
+
+// ─── Webhooks (abonnements) ───────────────────────────────────────────────────
+
+/**
+ * Ressource Webhooks — abonnements aux webhooks sortants des points de vente.
+ *
+ * Endpoints couverts :
+ *  - GET    /api/v2/webhooks
+ *  - GET    /api/v2/webhooks/{id}
+ *  - GET    /api/v2/webhooks/errors
+ *  - POST   /api/v2/webhooks
+ *  - PATCH  /api/v2/webhooks/{id}
+ *  - DELETE /api/v2/webhooks/{id}
+ *
+ * Les codes d'évènement `CAMPAIGN_*` n'existent qu'en version 2 : l'API répond 400 sur un
+ * webhook v1. Les codes ne sont pas contrôlés par le SDK : Scorimmo peut en ajouter sans
+ * breaking change. Pour la réception des webhooks, voir `ScorimmoWebhook`.
+ *
+ * @scope ROLE_API_WEBHOOK_READ pour `get()` / `list()` / `errors()`
+ * @scope ROLE_API_WEBHOOK_WRITE pour `create()` / `update()` / `delete()`
+ */
+export class WebhooksResource extends AbstractResource<WebhookSubscription, WebhooksListQuery> {
+  protected basePath(): string { return '/api/v2/webhooks' }
+  protected override sortFields(): readonly string[] { return ['id', 'created_at', 'updated_at', 'name'] }
+
+  /**
+   * Historique des échecs de livraison des webhooks du compte.
+   * @scope ROLE_API_WEBHOOK_READ
+   */
+  async errors(query: WebhookErrorsListQuery = {}): Promise<PaginatedResponse<WebhookDeliveryError>> {
+    assertPagination(query)
+    const qs = buildQueryString(query as Record<string, unknown>)
+    return this.client.request<PaginatedResponse<WebhookDeliveryError>>('GET', `${this.basePath()}/errors${qs ? `?${qs}` : ''}`)
+  }
+
+  /**
+   * Crée un webhook sur un point de vente. La version du webhook (champ `version` de la
+   * réponse) est fixée par Scorimmo.
+   * @scope ROLE_API_WEBHOOK_WRITE
+   */
+  async create(data: WebhookSubscriptionCreatePayload): Promise<WebhookSubscription> {
+    for (const required of ['store_id', 'name', 'url', 'events'] as const) {
+      if (data[required] === undefined || data[required] === null) {
+        throw new Error(`create() requires "${required}" in payload`)
+      }
+    }
+    return this.client.request<WebhookSubscription>('POST', this.basePath(), data)
+  }
+
+  /**
+   * Mise à jour partielle d'un webhook — seuls les champs transmis sont modifiés.
+   * @scope ROLE_API_WEBHOOK_WRITE
+   */
+  async update(id: number, data: WebhookSubscriptionUpdatePayload): Promise<WebhookSubscription> {
+    if (!data || Object.keys(data).length === 0) {
+      throw new Error('update() requires at least one field to modify')
+    }
+    return this.client.request<WebhookSubscription>('PATCH', `${this.basePath()}/${id}`, data)
+  }
+
+  /**
+   * Supprime un webhook.
+   * @scope ROLE_API_WEBHOOK_WRITE
+   */
+  async delete(id: number): Promise<void> {
+    await this.client.request<unknown>('DELETE', `${this.basePath()}/${id}`)
   }
 }
 
@@ -440,6 +654,11 @@ interface TokenCache {
  * // Après chaque appel, récupérer et re-persister le refresh token courant :
  * const next = client.getRefreshToken()
  * ```
+ *
+ * Authentification par refresh token OAuth (voir `ScorimmoOAuth`) :
+ * ```ts
+ * const client = new ScorimmoClient({ refreshToken: persisted, oauthClientId: clientId })
+ * ```
  */
 export class ScorimmoClient {
   private readonly baseUrl: string
@@ -448,6 +667,8 @@ export class ScorimmoClient {
   private refreshToken?: string
   private tokenCache: TokenCache | null = null
   private readonly timeoutMs: number
+  private readonly tokenName?: string
+  private readonly oauthClientId?: string
 
   readonly leads: LeadsResource
   readonly appointments: AppointmentsResource
@@ -463,16 +684,25 @@ export class ScorimmoClient {
   readonly requestFields: RequestFieldsResource
   readonly form: FormResource
   readonly webCallbacks: WebCallbacksResource
+  readonly campaigns: CampaignsResource
+  readonly campaignFields: CampaignFieldsResource
+  readonly campaignContacts: CampaignContactsResource
+  readonly webhooks: WebhooksResource
 
   constructor(config: ScorimmoClientConfig) {
     if (!config.email && !config.refreshToken) {
       throw new Error('ScorimmoClient requires either email+password or a refreshToken.')
+    }
+    if (config.oauthClientId && !config.refreshToken) {
+      throw new Error('ScorimmoClient requires a refreshToken when oauthClientId is set.')
     }
     this.baseUrl = (config.baseUrl ?? 'https://pro.scorimmo.com').replace(/\/$/, '')
     this.email = config.email
     this.password = config.password
     this.refreshToken = config.refreshToken
     this.timeoutMs = config.timeoutMs ?? 25_000
+    this.tokenName = config.tokenName
+    this.oauthClientId = config.oauthClientId
 
     this.leads = new LeadsResource(this)
     this.appointments = new AppointmentsResource(this)
@@ -488,6 +718,10 @@ export class ScorimmoClient {
     this.requestFields = new RequestFieldsResource(this)
     this.form = new FormResource(this)
     this.webCallbacks = new WebCallbacksResource(this)
+    this.campaigns = new CampaignsResource(this)
+    this.campaignFields = new CampaignFieldsResource(this)
+    this.campaignContacts = new CampaignContactsResource(this)
+    this.webhooks = new WebhooksResource(this)
   }
 
   // ── Tokens ──────────────────────────────────────────────────────────────────
@@ -526,6 +760,7 @@ export class ScorimmoClient {
     const res = await this.rawRequest<TokenResponse>('POST', '/api/v2/auth/token', {
       email: this.email,
       password: this.password,
+      ...(this.tokenName !== undefined ? { name: this.tokenName } : {}),
     }, false)
 
     if (!res.access_token) {
@@ -556,10 +791,29 @@ export class ScorimmoClient {
    * Révoque un refresh token spécifique, ou tous les refresh tokens du compte si non fourni.
    */
   async revokeToken(refreshToken?: string): Promise<Record<string, unknown>> {
-    const body: Record<string, unknown> = refreshToken
-      ? { refresh_token: refreshToken }
+    // L'endpoint exige un Bearer, dont l'obtention peut faire tourner le refresh token courant.
+    const current = this.refreshToken
+    await this.getToken()
+    const target = refreshToken !== undefined && refreshToken === current ? this.refreshToken : refreshToken
+
+    const body: Record<string, unknown> = target
+      ? { refresh_token: target }
       : { revoke_all: true }
-    return this.rawRequest<Record<string, unknown>>('POST', '/api/v2/auth/revoke', body, false)
+    return this.request<Record<string, unknown>>('POST', '/api/v2/auth/revoke', body)
+  }
+
+  /**
+   * Liste les refresh tokens actifs du compte (5 au maximum).
+   */
+  async listTokens(): Promise<ApiTokensResponse> {
+    return this.request<ApiTokensResponse>('GET', '/api/v2/auth/tokens')
+  }
+
+  /**
+   * Révoque un refresh token par son identifiant (voir `listTokens()`).
+   */
+  async deleteToken(id: number): Promise<{ code: number; message: string }> {
+    return this.request<{ code: number; message: string }>('DELETE', `/api/v2/auth/tokens/${id}`)
   }
 
   /**
@@ -570,9 +824,11 @@ export class ScorimmoClient {
   }
 
   private async exchangeRefreshToken(refreshToken: string): Promise<TokenResponse> {
-    const res = await this.rawRequest<TokenResponse>('POST', '/api/v2/auth/refresh', {
-      refresh_token: refreshToken,
-    }, false)
+    const res = this.oauthClientId !== undefined
+      ? await this.exchangeOAuthRefreshToken(refreshToken, this.oauthClientId)
+      : await this.rawRequest<TokenResponse>('POST', '/api/v2/auth/refresh', {
+        refresh_token: refreshToken,
+      }, false)
 
     if (!res.access_token) {
       throw new ScorimmoAuthError('Token refresh failed: no access_token in response')
@@ -580,6 +836,22 @@ export class ScorimmoClient {
 
     this.applyTokenResponse(res)
     return res
+  }
+
+  private async exchangeOAuthRefreshToken(refreshToken: string, clientId: string): Promise<TokenResponse> {
+    try {
+      return await this.rawRequest<TokenResponse>('POST', '/api/v2/oauth/token', {
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+        client_id: clientId,
+      }, false)
+    } catch (e) {
+      // /oauth/token signale un refresh token rejeté en 400 invalid_grant, et non en 401.
+      if (e instanceof ScorimmoApiError && e.apiCode === 'invalid_grant') {
+        throw new ScorimmoAuthError(e.message)
+      }
+      throw e
+    }
   }
 
   private applyTokenResponse(res: TokenResponse): void {
@@ -673,14 +945,28 @@ export class ScorimmoClient {
       clearTimeout(timer)
     }
 
-    const data = await res.json().catch(() => ({})) as { message?: string; code?: string | number }
+    const data = await res.json().catch(() => ({})) as {
+      message?: string
+      error?: string
+      error_description?: string
+      code?: string | number
+    }
 
     if (!res.ok) {
-      const message = data.message ?? `HTTP ${res.status}`
+      // Les endpoints /auth répondent { code, error }, /oauth { error, error_description },
+      // les autres { status, code, message }.
+      const message = data.message ?? data.error_description ?? data.error ?? `HTTP ${res.status}`
       if (!authenticate && res.status === 401) {
         throw new ScorimmoAuthError(message)
       }
-      throw new ScorimmoApiError(message, res.status, data.code)
+      const retryAfter = res.headers.get('Retry-After') ?? ''
+      throw new ScorimmoApiError(
+        message,
+        res.status,
+        data.code ?? data.error,
+        data,
+        /^\d+$/.test(retryAfter) ? Number(retryAfter) : undefined,
+      )
     }
 
     return data as T

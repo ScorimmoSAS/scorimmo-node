@@ -32,7 +32,7 @@ function makePage<T>(items: T[], totalItems: number, page = 1, limit = 50) {
   }
 }
 
-function mockFetch(responses: Array<{ ok: boolean; json: unknown; status?: number }>) {
+function mockFetch(responses: Array<{ ok: boolean; json: unknown; status?: number; headers?: Record<string, string> }>) {
   let i = 0
   return jest.fn().mockImplementation(() => {
     const r = responses[i++] ?? responses[responses.length - 1]
@@ -40,6 +40,7 @@ function mockFetch(responses: Array<{ ok: boolean; json: unknown; status?: numbe
       ok: r.ok,
       status: r.status ?? (r.ok ? 200 : 400),
       statusText: r.ok ? 'OK' : 'Bad Request',
+      headers: new Headers(r.headers),
       json: () => Promise.resolve(r.json),
     })
   })
@@ -174,21 +175,21 @@ describe('ScorimmoClient — tokens', () => {
   })
 
   it('revokeToken() posts refresh_token when given', async () => {
-    const fetch = mockFetch([{ ok: true, json: { revoked: true } }])
+    const fetch = mockFetch([{ ok: true, json: tokenResponse() }, { ok: true, json: { revoked: true } }])
     global.fetch = fetch as unknown as typeof global.fetch
     const client = new ScorimmoClient({ baseUrl, refreshToken: REFRESH })
     await client.revokeToken('to-revoke')
-    const [url, init] = fetch.mock.calls[0] as [string, { body: string }]
+    const [url, init] = fetch.mock.calls[1] as [string, { body: string }]
     expect(url).toContain('/api/v2/auth/revoke')
     expect(JSON.parse(init.body)).toEqual({ refresh_token: 'to-revoke' })
   })
 
   it('revokeToken() posts revoke_all when no token is given', async () => {
-    const fetch = mockFetch([{ ok: true, json: { revoked: true } }])
+    const fetch = mockFetch([{ ok: true, json: tokenResponse() }, { ok: true, json: { revoked: true } }])
     global.fetch = fetch as unknown as typeof global.fetch
     const client = new ScorimmoClient({ baseUrl, refreshToken: REFRESH })
     await client.revokeToken()
-    const [, init] = fetch.mock.calls[0] as [string, { body: string }]
+    const [, init] = fetch.mock.calls[1] as [string, { body: string }]
     expect(JSON.parse(init.body)).toEqual({ revoke_all: true })
   })
 

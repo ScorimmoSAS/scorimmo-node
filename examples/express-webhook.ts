@@ -64,6 +64,19 @@ app.post(
           console.log(`[closure_lead] Lead #${event.lead_id} — ${event.status}: ${event.close_reason ?? '—'}`)
         },
 
+        // Événements de campagne : webhooks v2 uniquement
+        onCampaignContactUpdated: async (event) => {
+          console.log(`[campaign_contact_updated] Contact #${event.contact_id} (campagne #${event.campaign_id})`)
+        },
+
+        onCampaignContactClosed: async (event) => {
+          console.log(`[campaign_contact_closed] Contact #${event.contact_id} — ${event.status}`)
+        },
+
+        onCampaignClosed: async (event) => {
+          console.log(`[campaign_closed] Campagne #${event.campaign_id} — ${event.close_reason}`)
+        },
+
         onUnknown: async (event) => {
           console.log('[scorimmo.unknown_event]', event)
         },

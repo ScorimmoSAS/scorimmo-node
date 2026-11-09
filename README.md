@@ -19,10 +19,13 @@ Facilite l'intégration des leads Scorimmo dans votre CRM en deux modes :
 - [Ressources exposées](#ressources-exposées)
 - [Formulaires publics](#formulaires-publics)
 - [Appels sortants (webCallbacks)](#appels-sortants-webcallbacks)
+- [Campagnes](#campagnes)
+- [Abonnements webhook](#abonnements-webhook)
 - [Webhooks — Express](#webhooks--express)
 - [Référence — Méthodes leads](#référence--méthodes-leads)
 - [Référence — Ressources secondaires](#référence--ressources-secondaires)
 - [Référence — Gestion des tokens](#référence--gestion-des-tokens)
+- [Référence — Authentification OAuth](#référence--authentification-oauth)
 - [Référence — Événements webhook](#référence--événements-webhook)
 - [Gestion des erreurs](#gestion-des-erreurs)
 - [Support](#support)
@@ -154,6 +157,10 @@ Toutes les ressources ci-dessous exposent `list(query?)` et `get(id)` (sauf ment
 | `client.requestFields` | `/api/v2/requests/fields` | `ref:read` |
 | `client.form` | `POST /api/v2/form` | `ROLE_API_FORM_WRITE` |
 | `client.webCallbacks` | `POST /api/v2/webcallbacks` | Clé WCB (pas de Bearer) |
+| `client.campaigns` | `/api/v2/campaigns` | `campaign:read` |
+| `client.campaignFields` | `/api/v2/campaigns/fields` | `campaign:read` |
+| `client.campaignContacts` | `/api/v2/campaigns/contacts` | `campaign:read` / `campaign:write` (pour `inject()`) |
+| `client.webhooks` | `/api/v2/webhooks` | `ROLE_API_WEBHOOK_READ` / `ROLE_API_WEBHOOK_WRITE` |
 
 ---
 
@@ -165,12 +172,12 @@ Le SDK expose l'endpoint public de soumission de formulaires — crée un lead e
 const res = await client.form.submit({
   store_id: 776,
   libelle_id: 12,
-  to_email: 'contact@agence.fr',        // ou string[]
+  to_email: 'contact@agence.fr',
   origin: 'Site web',
   message: 'Je souhaite visiter le bien X.',
   subject: 'Demande de visite',          // optionnel
   customer: {
-    civility: 'M.',
+    title: 'M.',                         // anciennement `civility`
     first_name: 'Jean',
     last_name: 'Dupont',
     email: 'jean@example.com',
@@ -193,6 +200,58 @@ Déclenche un appel depuis le PBX Scorimmo vers un numéro. **N'utilise pas l'au
 await client.webCallbacks.launch('votre-cle-wcb', '+33612345678')
 // { results: ['...'], information: 200 }
 ```
+
+Seuls les fixes et mobiles de France métropolitaine sont acceptés (`400` sinon). En cas de `429`, réessayez après `err.retryAfter` secondes.
+
+---
+
+## Campagnes
+
+| Ressource | Paramètres de `list()` | Tri |
+|---|---|---|
+| `campaigns` | `ids`, `store_id`, `status` (`upcoming`, `open`, `closed`) | `id`, `name`, `start`, `end` |
+| `campaignFields` | `campaign_id`, `store_id` | - |
+| `campaignContacts` | `campaign_id` (obligatoire), `ids`, `status` (`new`, `recontact`, `no_answer`, `closed`, `validated`), `sub_status` (`no_follow`, `refuse_answer`, `delete_contact`, `no_answer`), `created_at[gte]`, `updated_at[gte]`, `last_contact_at[gte]` | `id`, `created_at`, `updated_at`, `last_contact_at` |
+
+`campaignContacts.inject()` ajoute jusqu'à 100 contacts à une campagne. `last_name` et `phone` sont obligatoires ; les clés de `answers` sont les `label` retournés par `campaignFields`. Chaque contact est validé séparément :
+
+```ts
+const report = await client.campaignContacts.inject(12, [
+  { last_name: 'Dupont', phone: '0612345678', answers: { Budget: 250000 } },
+  { last_name: 'Martin', phone: 'invalide' },
+])
+// report.meta = { received: 2, created: 1, rejected: 1 }
+// report.data[1] = { index: 1, status: 'rejected', errors: [{ field: 'phone', message: '...' }] }
+```
+
+Le compte rendu est retourné même si tous les contacts sont refusés. Une erreur est levée si la campagne est introuvable (`404`) ou clôturée (`422`), ou si une autre injection est en cours sur la campagne (`409` : réessayez quelques secondes plus tard).
+
+---
+
+## Abonnements webhook
+
+**Scopes requis : `ROLE_API_WEBHOOK_READ`** en lecture, **`ROLE_API_WEBHOOK_WRITE`** en écriture.
+
+```ts
+const webhook = await client.webhooks.create({
+  store_id: 5,
+  name: 'CRM sync',
+  url: 'https://votre-app.com/webhook/scorimmo',
+  events: ['CREATION_LEAD', 'UPDATE_LEAD'],
+  headers: [{ key: 'X-Signature-256', value: 'sha256=votre-secret' }], // optionnel
+  interests: ['Location'],                                             // optionnel : tous par défaut
+})
+
+await client.webhooks.update(webhook.id, { events: ['CLOSE_LEAD'] })
+await client.webhooks.delete(webhook.id)
+
+// Échecs de livraison
+const errors = await client.webhooks.errors({ store_id: 5, status: 500 })
+```
+
+Codes d'évènement : `CREATION_LEAD`, `UPDATE_LEAD`, `NEW_COMMENT`, `RDV`, `REMINDER`, `CLOSE_LEAD`, `CAMPAIGN_CONTACT_UPDATE`, `CAMPAIGN_CONTACT_CLOSED`, `CAMPAIGN_CLOSED`. Les codes `CAMPAIGN_*` sont réservés aux webhooks en version 2 : vérifiez le champ `version` de vos webhooks, l'API répond `400` sur un webhook v1.
+
+`list()` accepte `ids`, `store_id`, `name`, `version`, `event`, `created_at[gte]`, `created_at[lte]` et le tri sur `id`, `created_at`, `updated_at`, `name`. `errors()` accepte `store_id`, `webhook_name`, `code`, `status` (code HTTP retourné par votre URL), `created_at[gte]`, `created_at[lte]`.
 
 ---
 
@@ -253,6 +312,9 @@ app.post(
         onClosureLead:  async (event) => {
           // event.status = 'Succès' | 'Fermé' | "Fermé par l'opérateur"
         },
+        onCampaignContactUpdated: async (event) => { /* webhooks v2 */ },
+        onCampaignContactClosed:  async (event) => { /* webhooks v2 */ },
+        onCampaignClosed:         async (event) => { /* webhooks v2 */ },
         onUnknown:      async (event) => {
           // Événement futur (X-Scorimmo-Event: webhook.<name>)
           console.warn('scorimmo.unknown_event', event)
@@ -296,15 +358,20 @@ webhook.getApiVersion(req.headers)     // '2026-04-20' | null
 | `new_comment` | `lead.comment_added` |
 | `new_rdv` | `lead.appointment_created` |
 | `new_reminder` | `lead.reminder_created` |
+| `campaign_contact_updated` | `campaign.contact_updated` |
+| `campaign_contact_closed` | `campaign.contact_closed` |
+| `campaign_closed` | `campaign.closed` |
 | _(événement futur inconnu)_ | `webhook.<name>` |
 
 > Enregistrez un handler `onUnknown` pour capturer les événements futurs — Scorimmo peut ajouter de nouveaux événements sans breaking change.
 
 ### Idempotence & retries
 
-Scorimmo effectue jusqu'à **6 tentatives de livraison** (initial + 5 retries) avec backoff exponentiel (5 s → 60 s max). Le corps et la signature sont identiques à chaque retry. Aucun `Idempotency-Key` n'est envoyé — votre récepteur doit être idempotent (dédupliquer sur `(event, lead_id, created_at)` ou `(event, id, updated_at)`).
+Scorimmo effectue jusqu'à **6 tentatives de livraison** (initial + 5 retries) avec backoff exponentiel (5 s → 60 s max). Le corps et la signature sont identiques à chaque retry. Aucun `Idempotency-Key` n'est envoyé — votre récepteur doit être idempotent (dédupliquer sur `(event, lead_id, created_at)` ou `(event, id, updated_at)`). Pour les campagnes : `(event, contact_id, updated_at)`, `(event, contact_id, closed_at)` ou `(event, campaign_id, closed_at)`.
 
 ### Configurer le webhook chez Scorimmo
+
+Un compte disposant du droit `ROLE_API_WEBHOOK_WRITE` peut créer l'abonnement lui-même avec [`client.webhooks.create()`](#abonnements-webhook). Sinon, transmettez ces informations à votre account manager Scorimmo :
 
 ```
 URL du webhook : https://votre-app.com/webhook/scorimmo
@@ -343,6 +410,9 @@ Authentification (au choix, fortement recommandé) :
   ☑ Rendez-vous         (new_rdv)
   ☑ Rappel              (new_reminder)
   ☑ Clôture lead        (closure_lead)
+  ☑ Contact de campagne modifié (campaign_contact_updated) — webhook v2 uniquement
+  ☑ Contact de campagne clôturé (campaign_contact_closed)  — webhook v2 uniquement
+  ☑ Campagne clôturée           (campaign_closed)          — webhook v2 uniquement
 
 Point(s) de vente concerné(s) : [indiquez vos points de vente]
 ```
@@ -390,7 +460,7 @@ Retourne une page `{ data, meta }`.
 | `purpose` | `string` | `Achat`, `Location`, `Vente`, `Recherche`… |
 | `customer_first_name`, `customer_last_name` | `string` | |
 | `customer.email`, `customer.phone` | `string` | Email / téléphone du contact |
-| `external_lead_id`, `requests_reference` | `string` | Références externes |
+| `requests_reference` | `string` | Référence du bien |
 | `ids` | `string` | Liste d'IDs séparés par virgule |
 | `created_at[eq\|gte\|lte]`, `updated_at[eq\|gte\|lte]` | `string` | Filtres de date (ISO 8601) |
 
@@ -461,11 +531,87 @@ await client.getToken()
 const next = client.getRefreshToken() // à re-persister (rotation à chaque échange)
 ```
 
+> **Limite de 5 refresh tokens actifs par compte.** Chaque authentification par email/password en crée un, et le 6e appel échoue en `403`. Persistez le refresh token plutôt que de vous authentifier à chaque exécution. En cas de blocage, libérez une place avec `listTokens()` et `deleteToken()`, ou `revokeToken()`.
+
+L'option `tokenName` du constructeur (100 caractères max) nomme la session créée par email/password, pour la retrouver dans `listTokens()`.
+
 Autres méthodes :
 
 - `client.refreshAccessToken(refreshToken)` — échange explicite, retourne la nouvelle paire.
 - `client.revokeToken(refreshToken?)` — révoque un token (ou tous si non passé).
 - `client.validateToken()` — introspection : `{ version, status, authenticated, scopes[], stores_id[], interests[] }`.
+- `client.listTokens()` — refresh tokens actifs (`data[]` : `id`, `name`, `ip_address`, `user_agent`, `source`, `created_at`, `expires_at`).
+- `client.deleteToken(id)` — révoque un refresh token par son identifiant.
+
+---
+
+## Référence — Authentification OAuth
+
+Pour un outil tiers qui agit au nom d'un utilisateur Scorimmo sans manipuler son mot de passe (`authorization_code` + PKCE). Le compte qui autorise doit disposer de `ROLE_API`. Pour une intégration serveur à serveur, préférez l'authentification par email/password.
+
+**1. Enregistrer l'outil** — une seule fois par outil, puis conserver le `client_id` :
+
+```ts
+import { ScorimmoClient, ScorimmoOAuth } from 'scorimmo-node'
+
+const oauth = new ScorimmoOAuth()
+const registration = await oauth.register(['https://votre-app.com/oauth/callback'], 'Mon outil')
+const clientId = registration.client_id
+```
+
+Hors `localhost`, l'URL de callback doit être en `https` sur un hôte autorisé par Scorimmo. Les adresses refusées sont retirées sans erreur : vérifiez `redirect_uris` dans la réponse.
+
+**2. Rediriger l'utilisateur vers l'écran de consentement :**
+
+```ts
+const pkce = ScorimmoOAuth.generatePkce()
+const state = ScorimmoOAuth.generateState()
+
+req.session.oauth = { verifier: pkce.code_verifier, state }
+
+res.redirect(oauth.authorizationUrl(
+  clientId,
+  'https://votre-app.com/oauth/callback',
+  pkce.code_challenge,
+  state,
+))
+```
+
+**3. Sur le callback, échanger le code** (usage unique, valable 60 secondes) :
+
+```ts
+if (req.query.state !== req.session.oauth.state) return res.sendStatus(400)
+
+if (req.query.error) {
+  // Refus de l'utilisateur ou compte sans accès API : req.query.error_description
+  return res.sendStatus(403)
+}
+
+const tokens = await oauth.exchangeCode(
+  String(req.query.code),
+  req.session.oauth.verifier,
+  'https://votre-app.com/oauth/callback',
+  clientId,
+)
+// → persister tokens.refresh_token côté serveur, jamais dans le navigateur
+```
+
+**4. Appeler l'API :**
+
+```ts
+const scorimmo = new ScorimmoClient({ refreshToken: tokens.refresh_token, oauthClientId: clientId })
+
+const leads = await scorimmo.leads.list()
+
+// → re-persister après chaque session
+const nextRefreshToken = scorimmo.getRefreshToken()
+```
+
+> **Persistez chaque nouveau refresh token.** Présenter un refresh token déjà remplacé révoque toute la chaîne, et l'utilisateur doit alors autoriser l'outil à nouveau. Dans ce cas, le client lève une `ScorimmoAuthError`.
+
+Pour déconnecter l'outil : `await oauth.revoke(refreshToken)`. L'API répond `200` même si le token est inconnu, et l'access token déjà émis reste valable jusqu'à son expiration.
+
+Les erreurs de `register()`, `exchangeCode()` et `revoke()` lèvent une `ScorimmoApiError`, avec le code OAuth dans `err.apiCode` (`invalid_grant`, `invalid_client`, `invalid_redirect_uri`, `access_denied`…).
 
 ---
 
@@ -500,6 +646,18 @@ Payload **sparse** : `id`, `updated_at`, + uniquement les champs modifiés (sous
 | `close_reason` | `string?` | Présent uniquement quand `status = 'Fermé'` ou `'Succès'` |
 | `external_lead_id` | `string?` | |
 
+### `campaign_contact_updated` — Contact de campagne modifié
+
+Webhooks v2 uniquement. `contact_id`, `campaign_id`, `store_id`, `updated_at`, puis les seuls champs modifiés : `status`, `sub_status` (peut valoir `null`), `answers` (réponses nouvelles ou changées, indexées par `label`), `customer` (champs modifiés, `null` pour un champ vidé). Un passage à `closed` ou `validated` émet `campaign_contact_closed` à la place.
+
+### `campaign_contact_closed` — Contact de campagne clôturé
+
+Webhooks v2 uniquement. État complet du contact à son passage à `closed` ou `validated` : `contact_id`, `campaign_id`, `store_id`, `status`, `sub_status`, `customer`, `answers` (une entrée par question, `null` sans réponse), `comment`, `call_count`, `first_contact_at`, `last_contact_at`, `closed_at`. La clôture manuelle d'une campagne n'émet aucun évènement par contact : seul `campaign_closed` part.
+
+### `campaign_closed` — Campagne clôturée
+
+Webhooks v2 uniquement. `campaign_id`, `store_id`, `name`, `start`, `end` (`Y-m-d`), `closed_at` (`Y-m-d H:i:s`), `close_reason` (`manual` pour une clôture manuelle, `end_date` si la date de fin est atteinte).
+
 > Pour la structure complète, consultez la [documentation webhooks](https://pro.scorimmo.com/webhook/doc).
 
 ---
@@ -517,6 +675,9 @@ try {
   } else if (err instanceof ScorimmoApiError) {
     // err.statusCode = 400 | 403 | 404 | ...
     // err.apiCode    = 'VALIDATION_ERROR' | 'FORBIDDEN' | 'NOT_FOUND' | ...
+    // err.getFieldErrors() = [{ field: 'email', message: '...' }] sur un 422
+    // err.retryAfter = secondes à attendre sur un 429, sinon undefined
+    // err.body       = corps JSON complet de la réponse d'erreur
   }
 }
 ```

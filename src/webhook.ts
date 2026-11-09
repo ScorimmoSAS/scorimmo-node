@@ -2,6 +2,9 @@ import { createHmac, timingSafeEqual } from 'node:crypto'
 import type {
   ScorimmoWebhookConfig,
   SemanticWebhookEvent,
+  WebhookCampaignClosed,
+  WebhookCampaignContactClosed,
+  WebhookCampaignContactUpdated,
   WebhookClosureLead,
   WebhookEvent,
   WebhookNewComment,
@@ -26,6 +29,9 @@ export interface WebhookHandlers {
   onNewRdv?: (payload: WebhookNewRdv) => void | Promise<void>
   onNewReminder?: (payload: WebhookNewReminder) => void | Promise<void>
   onClosureLead?: (payload: WebhookClosureLead) => void | Promise<void>
+  onCampaignContactUpdated?: (payload: WebhookCampaignContactUpdated) => void | Promise<void>
+  onCampaignContactClosed?: (payload: WebhookCampaignContactClosed) => void | Promise<void>
+  onCampaignClosed?: (payload: WebhookCampaignClosed) => void | Promise<void>
   onUnknown?: (payload: WebhookEvent) => void | Promise<void>
 }
 
@@ -62,12 +68,15 @@ type Headers = Record<string, string | string[] | undefined>
  * Événements émis (mapping `event` payload ↔ header) :
  *  new_lead → lead.created, update_lead → lead.updated, closure_lead → lead.closed,
  *  new_comment → lead.comment_added, new_rdv → lead.appointment_created,
- *  new_reminder → lead.reminder_created. Événements futurs : `webhook.<name>`
- *  (routés vers `onUnknown`).
+ *  new_reminder → lead.reminder_created. Webhooks v2 uniquement :
+ *  campaign_contact_updated → campaign.contact_updated,
+ *  campaign_contact_closed → campaign.contact_closed, campaign_closed → campaign.closed.
+ *  Événements futurs : `webhook.<name>` (routés vers `onUnknown`).
  *
  * Idempotence : livraison at-least-once (jusqu'à 6 tentatives, backoff exponentiel
  * jusqu'à 60 s). Le corps et la signature sont identiques à chaque retry — dédupliquez
- * côté récepteur par `(event, lead_id, created_at/updated_at)`.
+ * côté récepteur par `(event, lead_id, created_at/updated_at)`, ou pour les campagnes par
+ * `(event, contact_id, updated_at/closed_at)` et `(event, campaign_id, closed_at)`.
  *
  * ATTENTION : si vous activez la signature, le corps BRUT (avant JSON.parse) doit être
  * lu et transmis à `parse()`. Voir l'exemple `express-webhook.ts`.
@@ -166,6 +175,12 @@ export class ScorimmoWebhook {
         return handlers.onNewReminder ? () => handlers.onNewReminder!(event as WebhookNewReminder) : null
       case 'closure_lead':
         return handlers.onClosureLead ? () => handlers.onClosureLead!(event as WebhookClosureLead) : null
+      case 'campaign_contact_updated':
+        return handlers.onCampaignContactUpdated ? () => handlers.onCampaignContactUpdated!(event as WebhookCampaignContactUpdated) : null
+      case 'campaign_contact_closed':
+        return handlers.onCampaignContactClosed ? () => handlers.onCampaignContactClosed!(event as WebhookCampaignContactClosed) : null
+      case 'campaign_closed':
+        return handlers.onCampaignClosed ? () => handlers.onCampaignClosed!(event as WebhookCampaignClosed) : null
       default:
         return null
     }

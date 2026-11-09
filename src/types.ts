@@ -16,6 +16,20 @@ export interface ScorimmoClientConfig {
   refreshToken?: string
   /** Timeout HTTP en millisecondes. Défaut : 25 000. */
   timeoutMs?: number
+  /** Nom de la session (100 caractères max), affiché par `listTokens()`. */
+  tokenName?: string
+  /**
+   * Client OAuth à qui `refreshToken` a été émis : le renouvellement passe alors par
+   * `/api/v2/oauth/token` au lieu de `/api/v2/auth/refresh`.
+   */
+  oauthClientId?: string
+}
+
+export interface ScorimmoOAuthConfig {
+  /** URL de base de l'instance Scorimmo. Défaut : `https://pro.scorimmo.com` */
+  baseUrl?: string
+  /** Timeout HTTP en millisecondes. Défaut : 25 000. */
+  timeoutMs?: number
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -42,6 +56,37 @@ export interface TokenValidateResponse {
   scopes: string[]
   stores_id: number[]
   interests: string[]
+}
+
+export interface ApiToken {
+  id: number
+  name: string | null
+  ip_address: string | null
+  user_agent: string | null
+  source: string
+  created_at: string
+  expires_at: string
+}
+
+export interface ApiTokensResponse {
+  code: number
+  data: ApiToken[]
+}
+
+export interface OAuthClientRegistration {
+  client_id: string
+  client_id_issued_at: number
+  redirect_uris: string[]
+  grant_types: string[]
+  response_types: string[]
+}
+
+export interface OAuthTokenResponse {
+  access_token: string
+  token_type: 'Bearer'
+  expires_in: number
+  refresh_token: string
+  scope: string
 }
 
 // ─── Pagination ───────────────────────────────────────────────────────────────
@@ -164,7 +209,6 @@ export interface LeadsListQuery extends BaseListQuery {
   customer_last_name?: string
   'customer.email'?: string
   'customer.phone'?: string
-  external_lead_id?: string
   requests_reference?: string
   'created_at[eq]'?: string
   'created_at[gte]'?: string
@@ -382,6 +426,8 @@ export interface FieldsListQuery extends BaseListQuery {
 // ─── Form (soumission formulaire public) ──────────────────────────────────────
 
 export interface FormCustomer {
+  title?: 'M.' | 'Mme'
+  /** @deprecated Utiliser `title` ; le SDK convertit encore cette clé. */
   civility?: 'M.' | 'Mme'
   first_name?: string
   last_name?: string
@@ -392,11 +438,12 @@ export interface FormCustomer {
 export interface FormSubmitPayload {
   store_id: number
   libelle_id: number
-  to_email: string | string[]
+  to_email: string
   origin: string
   message: string
   subject?: string
   customer?: FormCustomer
+  requests_type?: string
   requests?: Array<Record<string, unknown>>
   additional_fields?: Array<Record<string, unknown>>
   external_lead_id?: string
@@ -416,6 +463,200 @@ export interface FormSubmitResponse {
 export interface WebCallbackLaunchResponse {
   results: string[]
   information: number
+}
+
+// ─── Campaigns ────────────────────────────────────────────────────────────────
+
+export type CampaignStatus = 'upcoming' | 'open' | 'closed'
+
+/** Les champs optionnels ne sont présents que sur le détail (`campaigns.get()`). */
+export interface Campaign {
+  id: number
+  name: string | null
+  store_id: number | null
+  status: CampaignStatus
+  start: string | null
+  end: string | null
+  type?: 'ponctual' | 'continuous'
+  manually_closed_at?: string | null
+  max_calls?: number | null
+  description?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface CampaignsListQuery extends BaseListQuery {
+  ids?: string
+  store_id?: number
+  status?: CampaignStatus
+}
+
+export interface CampaignField {
+  id: number
+  label: string
+  type: string
+  mandatory: boolean
+  description: string | null
+  choices?: string[]
+}
+
+export interface CampaignFieldSet {
+  campaign_id: number
+  fields: CampaignField[]
+}
+
+export interface CampaignFieldsListQuery extends BaseListQuery {
+  campaign_id?: number
+  store_id?: number
+}
+
+export type CampaignContactStatus = 'new' | 'recontact' | 'no_answer' | 'closed' | 'validated'
+export type CampaignContactSubStatus = 'no_follow' | 'refuse_answer' | 'delete_contact' | 'no_answer'
+
+/** `notes`, `call_dates` et `operator` ne sont présents que sur le détail (`campaignContacts.get()`). */
+export interface CampaignContact {
+  id: number
+  campaign_id: number
+  status: CampaignContactStatus | null
+  sub_status: CampaignContactSubStatus | null
+  customer: Customer | null
+  answers: Record<string, unknown>
+  comment: string | null
+  store_label: string | null
+  lead_id: number | null
+  call_count: number
+  recontact_at: string | null
+  first_contact_at: string | null
+  last_contact_at: string | null
+  anonymized: boolean
+  created_at: string | null
+  updated_at: string | null
+  notes?: unknown[]
+  call_dates?: unknown[]
+  operator?: { id: number; first_name: string | null; last_name: string | null; [key: string]: unknown } | null
+}
+
+export interface CampaignContactsListQuery extends BaseListQuery {
+  campaign_id: number
+  ids?: string
+  status?: CampaignContactStatus
+  sub_status?: CampaignContactSubStatus
+  'created_at[gte]'?: string
+  'updated_at[gte]'?: string
+  'last_contact_at[gte]'?: string
+}
+
+export interface CampaignContactInput {
+  last_name: string
+  phone: string
+  first_name?: string | null
+  email?: string | null
+  title?: string | null
+  zip_code?: string | null
+  city?: string | null
+  legal_name?: string | null
+  store_label?: string | null
+  comment?: string | null
+  /** Réponses indexées par les `label` de `campaignFields`. */
+  answers?: Record<string, unknown>
+}
+
+export interface CampaignContactInjectResult {
+  index: number
+  status: 'created' | 'rejected'
+  id?: number
+  errors?: Array<{ field: string; message: string }>
+}
+
+export interface CampaignContactsInjectResponse {
+  data: CampaignContactInjectResult[]
+  meta: { received: number; created: number; rejected: number }
+}
+
+// ─── Webhooks (abonnements) ───────────────────────────────────────────────────
+
+export type WebhookEventCode =
+  | 'CREATION_LEAD'
+  | 'UPDATE_LEAD'
+  | 'NEW_COMMENT'
+  | 'RDV'
+  | 'REMINDER'
+  | 'CLOSE_LEAD'
+  | 'CAMPAIGN_CONTACT_UPDATE'
+  | 'CAMPAIGN_CONTACT_CLOSED'
+  | 'CAMPAIGN_CLOSED'
+  | (string & {})
+
+export interface WebhookHeader {
+  key: string
+  value: string
+}
+
+export interface WebhookSubscription {
+  id: number
+  name: string
+  store_id: number | null
+  version: string
+  events: WebhookEventCode[]
+  url: string
+  headers: WebhookHeader[]
+  interests: string[]
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface WebhookSubscriptionCreatePayload {
+  store_id: number
+  name: string
+  url: string
+  events: WebhookEventCode[]
+  headers?: WebhookHeader[] | null
+  /** Vide ou omis = tous les univers. */
+  interests?: string[] | null
+}
+
+export interface WebhookSubscriptionUpdatePayload {
+  name?: string
+  url?: string
+  events?: WebhookEventCode[]
+  headers?: WebhookHeader[] | null
+  interests?: string[] | null
+}
+
+export interface WebhooksListQuery extends BaseListQuery {
+  ids?: string
+  store_id?: number
+  name?: string
+  version?: '1' | '2'
+  event?: WebhookEventCode
+  'created_at[gte]'?: string
+  'created_at[lte]'?: string
+}
+
+export interface WebhookDeliveryError {
+  id: number
+  store_id: number | null
+  webhook_name: string | null
+  code: string | null
+  /** Code HTTP retourné par l'URL cible. */
+  status: number | null
+  event: string | null
+  route: string | null
+  method: string | null
+  message: string
+  created_at: string
+}
+
+export interface WebhookErrorsListQuery {
+  page?: number
+  limit?: number
+  store_id?: number
+  webhook_name?: string
+  code?: string
+  /** Code HTTP retourné par l'URL cible. */
+  status?: number
+  'created_at[gte]'?: string
+  'created_at[lte]'?: string
 }
 
 // ─── Webhook events (payloads envoyés par Scorimmo) ───────────────────────────
@@ -495,6 +736,48 @@ export interface WebhookClosureLead {
   external_lead_id?: string
 }
 
+/** Webhooks v2 uniquement. Seuls les champs modifiés suivent `updated_at`. */
+export interface WebhookCampaignContactUpdated {
+  event: 'campaign_contact_updated'
+  contact_id: number
+  campaign_id: number
+  store_id: number | null
+  updated_at: string
+  status?: string
+  sub_status?: string | null
+  answers?: Record<string, unknown>
+  customer?: Record<string, unknown>
+}
+
+/** Webhooks v2 uniquement. État complet du contact à son passage à `closed` ou `validated`. */
+export interface WebhookCampaignContactClosed {
+  event: 'campaign_contact_closed'
+  contact_id: number
+  campaign_id: number
+  store_id: number | null
+  status: string | null
+  sub_status: string | null
+  customer: LeadCustomer | null
+  answers: Record<string, unknown>
+  comment: string | null
+  call_count: number
+  first_contact_at: string | null
+  last_contact_at: string | null
+  closed_at: string | null
+}
+
+/** Webhooks v2 uniquement. */
+export interface WebhookCampaignClosed {
+  event: 'campaign_closed'
+  campaign_id: number
+  store_id: number | null
+  name: string | null
+  start: string | null
+  end: string | null
+  closed_at: string
+  close_reason: 'manual' | 'end_date'
+}
+
 /**
  * Événements V2 connus + catch-all `webhook.<name>` pour les événements futurs.
  * Le champ `event` du payload garde le nom interne ; le header X-Scorimmo-Event porte
@@ -507,6 +790,9 @@ export type WebhookEvent =
   | WebhookNewRdv
   | WebhookNewReminder
   | WebhookClosureLead
+  | WebhookCampaignContactUpdated
+  | WebhookCampaignContactClosed
+  | WebhookCampaignClosed
   | { event: string;[key: string]: unknown }
 
 /**
@@ -519,6 +805,9 @@ export type SemanticWebhookEvent =
   | 'lead.comment_added'
   | 'lead.appointment_created'
   | 'lead.reminder_created'
+  | 'campaign.contact_updated'
+  | 'campaign.contact_closed'
+  | 'campaign.closed'
   | `webhook.${string}`
 
 // ─── Webhook config ───────────────────────────────────────────────────────────
