@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { ScorimmoApiError } from './client.js'
 import type { OAuthClientRegistration, OAuthTokenResponse, ScorimmoOAuthConfig } from './types.js'
+import { USER_AGENT } from './version.js'
 
 /**
  * Flux OAuth 2.1 `authorization_code` + PKCE de l'API Scorimmo v2 (RFC 6749 / RFC 7636).
@@ -124,7 +125,7 @@ export class ScorimmoOAuth {
     try {
       res = await fetch(`${this.baseUrl}${path}`, {
         method: 'POST',
-        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json', 'User-Agent': USER_AGENT },
         body: JSON.stringify(body),
         signal: controller.signal,
       })

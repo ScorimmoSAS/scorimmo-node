@@ -51,6 +51,7 @@ import type {
   WebhookSubscriptionUpdatePayload,
   WebhooksListQuery,
 } from './types.js'
+import { USER_AGENT } from './version.js'
 
 // ─── Errors ───────────────────────────────────────────────────────────────────
 
@@ -919,6 +920,7 @@ export class ScorimmoClient {
   private async rawRequest<T>(method: string, path: string, body: unknown, authenticate: boolean): Promise<T> {
     const headers: Record<string, string> = {
       Accept: 'application/json',
+      'User-Agent': USER_AGENT,
     }
     if (body !== undefined && body !== null) {
       headers['Content-Type'] = 'application/json'

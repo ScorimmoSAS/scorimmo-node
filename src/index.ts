@@ -24,6 +24,8 @@ export {
 
 export { ScorimmoOAuth } from './oauth.js'
 
+export { SDK_VERSION } from './version.js'
+
 export {
   ScorimmoWebhook,
   WebhookAuthError,

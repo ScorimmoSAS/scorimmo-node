@@ -1,6 +1,6 @@
 {
   "name": "scorimmo-node",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Official Scorimmo SDK for Node.js — API client & webhook handler",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
